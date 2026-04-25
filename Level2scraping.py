@@ -5,8 +5,8 @@ import os
 
 URL = "https://dailyepaper.in/the-free-press-journal-epaper-download/"
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+print("TOKEN:", TELEGRAM_TOKEN)
+print("CHAT_ID:", CHAT_ID)
 
 
 def get_latest_pdf():
@@ -46,7 +46,8 @@ def send_to_telegram(pdf_url):
         }
     )
 
-    print("Telegram response:", response.text)
+    print("STATUS:", response.status_code)
+    print("RESPONSE:", response.text)
 
 
 def main():
