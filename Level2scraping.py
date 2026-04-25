@@ -2,16 +2,13 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import os
+import time
+from datetime import datetime
 
-# 🔗 Source URL
 URL = "https://dailyepaper.in/the-free-press-journal-epaper-download/"
 
-# 🔐 Read secrets from environment (GitHub Actions)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
-
-print("TOKEN:", TELEGRAM_TOKEN)
-print("CHAT_ID:", CHAT_ID)
 
 
 def get_latest_pdf():
@@ -24,7 +21,6 @@ def get_latest_pdf():
     soup = BeautifulSoup(res.text, "html.parser")
 
     links = soup.find_all("a")
-
     drive_links = []
 
     for link in links:
@@ -36,7 +32,6 @@ def get_latest_pdf():
         print("❌ No Drive links found")
         return None
 
-    # Assume first = latest
     latest = drive_links[0]
 
     match = re.search(r"/d/(.*?)/", latest)
@@ -48,28 +43,34 @@ def get_latest_pdf():
     return None
 
 
-def send_to_telegram(pdf_url):
+def download_pdf(pdf_url):
+    print("⬇️ Downloading file...")
+    res = requests.get(pdf_url)
+
+    if res.status_code != 200:
+        print("❌ Download failed")
+        return None
+
+    return res.content
+
+
+def send_to_telegram(file_bytes):
     if not TELEGRAM_TOKEN or not CHAT_ID:
         print("❌ Missing TELEGRAM_TOKEN or CHAT_ID")
         return
 
-    print("⬇️ Downloading file...")
-
-    file_response = requests.get(pdf_url)
-
-    if file_response.status_code != 200:
-        print("❌ Failed to download PDF")
-        return
+    today = datetime.now().strftime("%d-%b-%Y")
+    filename = f"Newspaper_{today}.pdf"
 
     files = {
-        "document": ("newspaper.pdf", file_response.content)
+        "document": (filename, file_bytes)
     }
 
     response = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument",
         data={
             "chat_id": CHAT_ID,
-            "caption": "📰 Today's Newspaper"
+            "caption": f"📰 Newspaper - {today}"
         },
         files=files
     )
@@ -79,15 +80,29 @@ def send_to_telegram(pdf_url):
 
 
 def main():
-    pdf = get_latest_pdf()
+    pdf_url = None
 
-    if not pdf:
-        print("❌ No PDF found")
+    # 🔁 Retry logic (3 attempts)
+    for i in range(3):
+        print(f"Attempt {i+1}...")
+        pdf_url = get_latest_pdf()
+        if pdf_url:
+            break
+        time.sleep(60)
+
+    if not pdf_url:
+        print("❌ Could not find PDF after retries")
         return
 
-    print("📄 Latest PDF:", pdf)
+    print("📄 Found PDF:", pdf_url)
 
-    send_to_telegram(pdf)
+    file_bytes = download_pdf(pdf_url)
+
+    if not file_bytes:
+        print("❌ Failed to download PDF")
+        return
+
+    send_to_telegram(file_bytes)
 
 
 if __name__ == "__main__":
