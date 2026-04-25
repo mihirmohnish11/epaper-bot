@@ -5,8 +5,8 @@ import os
 
 URL = "https://dailyepaper.in/the-free-press-journal-epaper-download/"
 
-TELEGRAM_TOKEN = os.environ.get(bot8620479743:AAFvRaxZukt_PAtxjs7ceCLZ3hEmpuFWIMI)
-CHAT_ID = os.environ.get(398210107)
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
 
 def get_latest_pdf():
