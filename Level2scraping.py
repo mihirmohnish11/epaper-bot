@@ -1,8 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import os
 
 URL = "https://dailyepaper.in/the-free-press-journal-epaper-download/"
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+
 
 def get_latest_pdf():
     res = requests.get(URL)
@@ -21,18 +26,40 @@ def get_latest_pdf():
         print("❌ No links found")
         return None
 
-    latest = drive_links[0]  # assume latest
+    latest = drive_links[0]
 
     match = re.search(r"/d/(.*?)/", latest)
     if match:
         file_id = match.group(1)
-        direct = f"https://drive.google.com/uc?export=download&id={file_id}"
-        return direct
+        return f"https://drive.google.com/uc?export=download&id={file_id}"
 
     return None
 
 
-pdf = get_latest_pdf()
+def send_to_telegram(pdf_url):
+    response = requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument",
+        data={
+            "chat_id": CHAT_ID,
+            "document": pdf_url,
+            "caption": "📰 Today's Newspaper"
+        }
+    )
 
-print("📄 Latest PDF:")
-print(pdf)
+    print("Telegram response:", response.text)
+
+
+def main():
+    pdf = get_latest_pdf()
+
+    if not pdf:
+        print("No PDF found")
+        return
+
+    print("📄 Latest PDF:", pdf)
+
+    send_to_telegram(pdf)
+
+
+if __name__ == "__main__":
+    main()
