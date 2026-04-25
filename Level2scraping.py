@@ -3,7 +3,12 @@ from bs4 import BeautifulSoup
 import re
 import os
 
+# 🔗 Source URL
 URL = "https://dailyepaper.in/the-free-press-journal-epaper-download/"
+
+# 🔐 Read secrets from environment (GitHub Actions)
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
 print("TOKEN:", TELEGRAM_TOKEN)
 print("CHAT_ID:", CHAT_ID)
@@ -11,6 +16,11 @@ print("CHAT_ID:", CHAT_ID)
 
 def get_latest_pdf():
     res = requests.get(URL)
+
+    if res.status_code != 200:
+        print("❌ Failed to fetch page")
+        return None
+
     soup = BeautifulSoup(res.text, "html.parser")
 
     links = soup.find_all("a")
@@ -23,20 +33,26 @@ def get_latest_pdf():
             drive_links.append(href)
 
     if not drive_links:
-        print("❌ No links found")
+        print("❌ No Drive links found")
         return None
 
+    # Assume first = latest
     latest = drive_links[0]
 
     match = re.search(r"/d/(.*?)/", latest)
     if match:
         file_id = match.group(1)
-        return f"https://drive.google.com/uc?export=download&id={file_id}"
+        direct_link = f"https://drive.google.com/uc?export=download&id={file_id}"
+        return direct_link
 
     return None
 
 
 def send_to_telegram(pdf_url):
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        print("❌ Missing TELEGRAM_TOKEN or CHAT_ID")
+        return
+
     response = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument",
         data={
@@ -54,7 +70,7 @@ def main():
     pdf = get_latest_pdf()
 
     if not pdf:
-        print("No PDF found")
+        print("❌ No PDF found")
         return
 
     print("📄 Latest PDF:", pdf)
