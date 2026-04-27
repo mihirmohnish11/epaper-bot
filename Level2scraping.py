@@ -1,142 +1,118 @@
 import requests
 from bs4 import BeautifulSoup
-import re
-import os
-import time
 from datetime import datetime
+import time
+import os
+import re
 
-# 🔗 Base URL
-BASE_URL = "https://dailyepaper.in"
+# ================= CONFIG =================
 URL = "https://dailyepaper.in/the-free-press-journal-epaper-download/"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-# 🔐 Secrets
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
+
+# ==========================================
+
+
+def get_mumbai_pdf():
+    try:
+        res = requests.get(URL, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        today = datetime.now().strftime("%d %b %Y")
+        print("Looking for:", today)
+
+        rows = soup.find_all("p")
+
+        for row in rows:
+            text = row.get_text()
+
+            if today in text:
+                print("Found today's row")
+
+                links = row.find_all("a")
+
+                for link in links:
+                    if "Mumbai" in link.text:
+                        page_url = link.get("href")
+                        print("Mumbai page:", page_url)
+
+                        return extract_drive_link(page_url)
+
+        print("Mumbai not found")
+        return None
+
+    except Exception as e:
+        print("Error fetching main page:", e)
+        return None
 
 
 def extract_drive_link(page_url):
-    print("🔎 Opening Mumbai page:", page_url)
+    try:
+        res = requests.get(page_url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
 
-    res = requests.get(page_url)
-    soup = BeautifulSoup(res.text, "html.parser")
+        for a in soup.find_all("a"):
+            href = a.get("href")
 
-    links = soup.find_all("a")
-
-    for link in links:
-        href = link.get("href")
-        if href and "drive.google.com/file/d/" in href:
-            match = re.search(r"/d/(.*?)/", href)
-            if match:
-                file_id = match.group(1)
+            if href and "drive.google.com/file/d/" in href:
+                file_id = re.search(r"/d/(.*?)/", href).group(1)
                 direct = f"https://drive.google.com/uc?export=download&id={file_id}"
-                print("✅ Found Drive PDF")
+
+                print("Found PDF:", direct)
                 return direct
 
-    print("❌ No Drive link found on Mumbai page")
-    return None
-
-
-def get_latest_pdf():
-    res = requests.get(URL)
-
-    if res.status_code != 200:
-        print("❌ Failed to fetch main page")
+        print("Drive link not found")
         return None
 
-    soup = BeautifulSoup(res.text, "html.parser")
-
-    today = datetime.now().strftime("%d %b %Y")  # e.g. 27 Apr 2026
-    print("📅 Looking for:", today)
-
-    rows = soup.find_all("p")
-
-    for row in rows:
-        text = row.get_text()
-
-        if today in text:
-            print("✅ Found today's row")
-
-            links = row.find_all("a")
-
-            for link in links:
-                if "Mumbai" in link.get_text():
-                    mumbai_url = link.get("href")
-
-                    # Fix relative URL
-                    if not mumbai_url.startswith("http"):
-                        mumbai_url = BASE_URL + mumbai_url
-
-                    print("👉 Mumbai link:", mumbai_url)
-
-                    return extract_drive_link(mumbai_url)
-
-    print("❌ Mumbai link not found for today")
-    return None
-
-
-def download_pdf(pdf_url):
-    print("⬇️ Downloading PDF...")
-
-    res = requests.get(pdf_url)
-
-    if res.status_code != 200:
-        print("❌ Download failed")
+    except Exception as e:
+        print("Error extracting drive link:", e)
         return None
 
-    return res.content
 
+def send_to_telegram(pdf_url):
+    try:
+        date_str = datetime.now().strftime("%d-%b-%Y")
+        filename = f"FreePress_Mumbai_{date_str}.pdf"
 
-def send_to_telegram(file_bytes):
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("❌ Missing TELEGRAM_TOKEN or CHAT_ID")
-        return
+        tg_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
 
-    today = datetime.now().strftime("%d-%b-%Y")
-    filename = f"Mumbai_Newspaper_{today}.pdf"
-
-    files = {
-        "document": (filename, file_bytes)
-    }
-
-    response = requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument",
-        data={
+        data = {
             "chat_id": CHAT_ID,
-            "caption": f"📰 Mumbai Newspaper - {today}"
-        },
-        files=files
-    )
+            "caption": f"📰 Free Press Journal Mumbai\n📅 {date_str}"
+        }
 
-    print("STATUS:", response.status_code)
-    print("RESPONSE:", response.text)
+        files = {
+            "document": (filename, requests.get(pdf_url, stream=True).content)
+        }
+
+        response = requests.post(tg_url, data=data, files=files)
+
+        print("STATUS:", response.status_code)
+        print("RESPONSE:", response.text)
+
+    except Exception as e:
+        print("Telegram error:", e)
 
 
 def main():
-    pdf_url = None
+    MAX_RETRIES = 5
 
-    # 🔁 Retry logic (important)
-    for i in range(3):
-        print(f"🔁 Attempt {i+1}")
-        pdf_url = get_latest_pdf()
+    for attempt in range(MAX_RETRIES):
+        print(f"Attempt {attempt + 1}")
 
-        if pdf_url:
-            break
+        pdf = get_mumbai_pdf()
 
-        time.sleep(60)
+        if pdf:
+            send_to_telegram(pdf)
+            return
 
-    if not pdf_url:
-        print("❌ Could not find Mumbai PDF after retries")
-        return
+        time.sleep(120)  # wait 2 minutes before retry
 
-    print("📄 Final PDF:", pdf_url)
-
-    file_bytes = download_pdf(pdf_url)
-
-    if not file_bytes:
-        print("❌ Download failed")
-        return
-
-    send_to_telegram(file_bytes)
+    print("❌ Could not fetch Mumbai PDF after retries")
 
 
 if __name__ == "__main__":
